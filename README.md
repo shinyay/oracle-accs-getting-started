@@ -7,7 +7,7 @@ Application Container Cloud Service は、Java アプリケーション、Node.j
 
 ## アプリケーション・デプロイ実施前提
 
-- RESTクライアント: ここでは **cURL** を使用したコマンドライン操作を行います。\
+- RESTクライアント: ここでは **cURL** を使用したコマンドライン操作を行います。
 - アプリケーション: 構成情報 (**manifest.json**) を含むアーカイブ形式にします。
   - ***bin/get-samle-app.sh*** を使用してサンプル・アプリケーションが取得できます。
 
@@ -238,3 +238,346 @@ Application Container Cloud Service のサービス・コンソールを開き�
 デプロイが終了し、新しいバージョンのアプリケーションがデプロイされている事が確認できます。
 
 ![](images/accs-basic25.jpg)
+
+
+### 5. REST API を用いたアプリケーション・デプロイ
+
+REST API を用いてアプリケーションをデプロイする場合は、まず Storage Cloud Service にアプリケーション・アーカイブ・ファイルをアップロードします。そして、アップロードしたファイルを指定して Application Container Cloud Service にデプロイを行います。
+
+#### 5.1. Storage Cloud Service へのアプリケーション・アップロード
+
+Storage Cloud Service 上に、アプリケーション・アーカイブ・ファイルを配置するコンテナを作成します。
+
+```bash
+$ curl -i -X PUT -u <CLOUD_USER>:<CLOUD_PWD> https://<IDDOMAIN>.storage.oraclecloud.com/v1/Storage-<IDDOMAIN>/<CONTAINER_NAME>
+```
+
+- CLOUD_USER: Storage Cloud Service の権限を持つアカウント名
+- CLOUD_PWD: 上記アカウントのパスワード
+- IDDOMAIN: 使用しているアイデンティティ・ドメイン名
+- CONTAINER_NAME: 作成するコンテナ名 (例: employees-web-app)
+
+次に作成したコンテナにアプリケーション・アーカイブ・ファイルをアップロードします。
+
+```bash
+$ curl -i -X PUT -u <CLOUD_USER>:<CLOUD_PWD> https://<IDDOMAIN>.storage.oraclecloud.com/v1/Storage-<IDDOMAIN>/<CONTAINER_NAME>/<APPLICATION_FILE> -T <PATH_TO_FILE>/<APPLICATION_FILE>
+```
+
+- PATH_TO_FILE: ローカルのパス
+- APPLICATION_FILE: アップロードするアプリケーション・アーカイブ・ファイル名 (例: employees-web-app.zip)
+
+#### 5.2. Application Container Cloud Service へのアプリケーション・デプロイ
+
+```bash
+$ curl -i -X POST -u <CLOUD_USER>:<CLOUD_PWD> \
+-H 'Content-Type: multipart/form-data' \
+-H 'Accept: application/json' \
+-H 'X-ID-TENANT-NAME: <IDDOMAIN>' \
+-F 'name=<APPLICATION_NAME>' \
+-F 'runtime=java' \
+-F 'subscription=hourly' \
+-F 'archiveURL=<CONTAINER_NAME>/<APPLICATION_FILE>' \
+-F 'deployment=@deployment.json' \
+https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/<IDDOMAIN>
+```
+
+- deployment.json: インスタンス数やメモリ容量などの環境構成情報を記述したJSONファイル
+  - 以下、サンプルのdeployment.json
+
+```json
+{
+    "memory": "2G",
+    "instances": "1",  
+    "environment": {
+        "NO_OF_CONNECTIONS":"25",
+        "TWITTER_ID":"JAVA"
+    },
+    "services": [{
+        "identifier": "ProdService",
+        "type": "JAAS",
+        "name": "Jaas Service",
+        "username": "username",
+        "password": "password"
+    },
+    {
+        "identifier": "DBService",
+        "type": "DBAAS",
+        "name": "MyDB",
+        "username": "username",
+        "password": "password"
+    }]
+}
+```
+
+- memory: メモリ容量 (1GB から 20GB)
+- instances: インスタンス数
+- environment: 環境変数 (KEYとVALUEの組み合わせで設定)
+- services: バインドする他の Oracle Cloud Service
+  - identifier: 識別子
+  - type: サービス・タイプ
+    - JCSの場合: JAAS
+    - DBCSの場合: DBAAS
+    - MySQLCSの場合: MYSQLCS
+  - name: サービス・インスタンス名
+  - username: 該当のサービスにアクセスするユーザ名
+  - password: 上記ユーザのパスワード
+
+ここでは、次の deployment.json を使用します。
+
+```json
+{
+    "memory": "2G",
+    "instances": "1",
+    "environment":{
+        "TEST_ENV_VAR": "TestValue"
+    }
+}
+```
+
+以下、実行例です:
+
+```bash
+$ curl -i -X POST -u <CLOUD_USER>:<CLOUD_PWD> \
+> -H 'Content-Type: multipart/form-data' \
+> -H 'Accept: application/json' \
+> -H 'X-ID-TENANT-NAME: IDDOMAIN' \
+> -F 'name=SAMPLE-APP' \
+> -F 'runtime=java' \
+> -F 'subscription=hourly' \
+> -F 'archiveURL=employees-web-app/employees-web-app.zip' \
+> -F 'deployment=@deployment.json' \
+> https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN
+HTTP/1.1 100 Continue
+
+HTTP/1.1 202 Accepted
+Server: Oracle-Application-Server-11g
+Location: https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/opStatus/3226058
+X-ORACLE-DMS-ECID: 005GsFBLgGa3z015Rvl3id0003KE0002ro
+X-ORACLE-DMS-ECID: 005GsFBLgGa3z015Rvl3id0003KE0002ro
+X-Frame-Options: DENY
+Service-URI: https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP
+Retry-After: 5
+Content-Language: en
+Content-Type: application/json
+Vary: user-agent
+Date: Tue, 13 Dec 2016 05:50:18 GMT
+Connection: close
+```
+```json
+{
+  "identityDomain": "IDDOMAIN",
+  "appId": "e33c04e9-b65a-4d4f-957e-cf8d4d2328b8",
+  "name": "SAMPLE-APP",
+  "status": "NEW",
+  "createdBy": "shinyay",
+  "creationTime": "2016-12-13T05:50:18.105+0000",
+  "lastModifiedTime": "2016-12-13T05:50:18.072+0000",
+  "subscriptionType": "HOURLY",
+  "isClustered": false,
+  "requiresAntiAffinity": false,
+  "computeSite": "EM003_Z18",
+  "instances": [],
+  "lastestDeployment": {
+    "deploymentId": "230d8ca8-2b51-46e8-ab1f-842a880bdccb",
+    "deploymentStatus": "READY",
+    "deploymentURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/deployments/230d8ca8-2b51-46e8-ab1f-842a880bdccb"
+  },
+  "currentOngoingActivity": "Creating Application",
+  "appURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP",
+  "message": []
+}
+```
+
+Application Container Cloud Service のサービス・コンソールを確認すると、以下のようにインスタンスが作成されています。
+
+![](images/accs-basic26.jpg)
+
+
+#### 5.3. deployment.json を用いた構成変更
+
+今の状態は、以下のように ***インスタンス数: 1***、***メモリ容量: 2GB*** になっています。この構成を **deployment.json** を変更し、REST API で反映させます。
+
+![](images/accs-basic27.jpg)
+
+
+以下のように、*memory* と *instance* の値を倍増させます。
+
+```json
+{
+    "memory": "4G",
+    "instances": "2",
+    "environment":{
+        "TEST_ENV_VAR": "TestValue"
+    }
+}
+```
+
+変更した deployment.json を指定し、以下のように実行します:
+
+```bash
+$ curl -i -X PUT -u shinyay:yanaYANA0928 \
+> -H 'Content-Type: multipart/form-data' \
+> -H 'Accept: application/json' \
+> -H 'X-ID-TENANT-NAME: IDDOMAIN' \
+> -F 'deployment=@deployment.json' \
+> -F 'notes=update with deployment.json' \
+https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP
+HTTP/1.1 100 Continue
+
+HTTP/1.1 202 Accepted
+Server: Oracle-Application-Server-11g
+Location: https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/opStatus/3233760
+X-ORACLE-DMS-ECID: 005GsGR^qh83z015Rvl3id0003KE0003Go
+X-ORACLE-DMS-ECID: 005GsGR^qh83z015Rvl3id0003KE0003Go
+X-Frame-Options: DENY
+Service-URI: https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP
+Retry-After: 5
+Content-Language: en
+Content-Type: application/json
+Vary: user-agent
+Date: Tue, 13 Dec 2016 06:12:42 GMT
+Connection: close
+```
+```json
+{
+  "identityDomain": "IDDOMAIN",
+  "appId": "e33c04e9-b65a-4d4f-957e-cf8d4d2328b8",
+  "name": "SAMPLE-APP",
+  "status": "RUNNING",
+  "createdBy": "shinyay",
+  "creationTime": "2016-12-13T05:50:18.105+0000",
+  "lastModifiedTime": "2016-12-13T06:12:41.819+0000",
+  "subscriptionType": "HOURLY",
+  "isClustered": false,
+  "requiresAntiAffinity": false,
+  "computeSite": "EM003_Z18",
+  "instances": [
+    {
+      "name": "web.1",
+      "status": "RUNNING",
+      "memory": "2G",
+      "instanceURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/instances/web.1"
+    }
+  ],
+  "runningDeployment": {
+    "deploymentId": "230d8ca8-2b51-46e8-ab1f-842a880bdccb",
+    "deploymentStatus": "READY",
+    "deploymentURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/deployments/230d8ca8-2b51-46e8-ab1f-842a880bdccb"
+  },
+  "lastestDeployment": {
+    "deploymentId": "f9dab6d1-2f6a-43e4-91a5-b7b67cc2762c",
+    "deploymentStatus": "READY",
+    "deploymentURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/deployments/f9dab6d1-2f6a-43e4-91a5-b7b67cc2762c"
+  },
+  "currentOngoingActivity": "Deploying Release",
+  "appURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP",
+  "webURL": "https://SAMPLE-APP-IDDOMAIN.apaas.em3.oraclecloud.com",
+  "message": []
+}
+```
+
+インスタンス詳細画面に移動すると、構成が変更されている事が確認できます。
+**インスタンス数: 2**、**メモリ容量: 4GB** になっています。また、Notes も更新されてります。
+
+![](images/accs-basic28.jpg)
+
+
+#### 5.4. REST API によるアプリケーション再デプロイメント
+
+REST API を用いて、アプリケーションの再デプロイを行います。
+*employees-web-app.zip* に含まれている **manifest.json** を以下のように *version* と *notes* を変更します:
+
+```json
+{
+    "runtime": {
+        "majorVersion": "8"
+    },
+    "command": "java -jar employees-app-1.0-SNAPSHOT-jar-with-dependencies.jar",
+    "release": {
+        "build": "2016-12",
+        "commit": "updateApp",
+        "version": "v2.2"
+    },
+    "notes": "Redeploy application with using REST API"
+}
+```
+
+5.1 で実施した手順に従って、Storage Cloud Service へアーカイブ・ファイルをアップロードします。
+
+```
+$ curl -X PUT -u <CLOUD_USER>:<CLOUD_PWD> \ https://<IDDOMAIN>.storage.oraclecloud.com/v1/Storage-<IDDOMAIN>/employees-web-app/employees-web-app.zip -T . /employees-web-app.zip
+```
+
+次に、REST API で再デプロイを行います。エンドポイントにアプリケーション名が含まれている点が初回デプロイ時と異なります:
+
+```bash
+$ curl -i -X PUT -u <CLOUD_USER>:<CLOUD_PWD> \
+> -H 'Content-Type: multipart/form-data' \
+> -H 'Accept: application/json' \
+> -H 'X-ID-TENANT-NAME: IDDOMAIN' \
+> -F 'archiveURL=employees-web-app/employees-web-app.zip' \
+> -F 'deployment=@deployment.json' \
+> https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP
+HTTP/1.1 100 Continue
+
+HTTP/1.1 202 Accepted
+Server: Oracle-Application-Server-11g
+Location: https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/opStatus/3226106
+X-ORACLE-DMS-ECID: 005GsI4XnU13z015Rvl3id0003KE0003TA
+X-ORACLE-DMS-ECID: 005GsI4XnU13z015Rvl3id0003KE0003TA
+X-Frame-Options: DENY
+Service-URI: https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP
+Retry-After: 5
+Content-Language: en
+Content-Type: application/json
+Vary: user-agent
+Date: Tue, 13 Dec 2016 06:42:06 GMT
+Connection: close
+```
+```json
+{
+  "identityDomain": "IDDOMAIN",
+  "appId": "e33c04e9-b65a-4d4f-957e-cf8d4d2328b8",
+  "name": "SAMPLE-APP",
+  "status": "RUNNING",
+  "createdBy": "shinyay",
+  "creationTime": "2016-12-13T05:50:18.105+0000",
+  "lastModifiedTime": "2016-12-13T06:42:05.608+0000",
+  "subscriptionType": "HOURLY",
+  "isClustered": false,
+  "requiresAntiAffinity": false,
+  "computeSite": "EM003_Z18",
+  "instances": [
+    {
+      "name": "web.1",
+      "status": "RUNNING",
+      "memory": "4G",
+      "instanceURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/instances/web.1"
+    },
+    {
+      "name": "web.2",
+      "status": "RUNNING",
+      "memory": "4G",
+      "instanceURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/instances/web.2"
+    }
+  ],
+  "runningDeployment": {
+    "deploymentId": "f9dab6d1-2f6a-43e4-91a5-b7b67cc2762c",
+    "deploymentStatus": "READY",
+    "deploymentURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/deployments/f9dab6d1-2f6a-43e4-91a5-b7b67cc2762c"
+  },
+  "lastestDeployment": {
+    "deploymentId": "abc3a795-2897-4a31-9ff0-5b2cc1b0c257",
+    "deploymentStatus": "READY",
+    "deploymentURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP/deployments/abc3a795-2897-4a31-9ff0-5b2cc1b0c257"
+  },
+  "currentOngoingActivity": "Deploying Release",
+  "appURL": "https://psm.europe.oraclecloud.com/paas/service/apaas/api/v1.1/apps/IDDOMAIN/SAMPLE-APP",
+  "webURL": "https://SAMPLE-APP-IDDOMAIN.apaas.em3.oraclecloud.com",
+  "message": []
+}
+```
+
+インスタンス詳細画面のデプロイメント画面を開くと、manifest.json の更新内容が反映されている事が確認でき、再デプロイメントが実施できた事が確認できます。
+
+![](images/accs-basic29.jpg)
